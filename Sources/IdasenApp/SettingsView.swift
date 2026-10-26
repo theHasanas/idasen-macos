@@ -532,8 +532,9 @@ struct HotKeyRecorderRow: View {
                 return nil
             }
             let flags = event.modifierFlags.intersection([.command, .option, .control, .shift])
-            guard !flags.isEmpty else { return nil }
-            combo = HotKeyCombo(keyCode: event.keyCode, modifiers: flags.rawValue)
+            let recorded = HotKeyCombo(keyCode: event.keyCode, modifiers: flags.rawValue)
+            guard recorded.isValidShortcut else { return nil }
+            combo = recorded
             stopRecording()
             return nil
         }

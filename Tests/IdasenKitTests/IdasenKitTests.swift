@@ -494,6 +494,20 @@ final class AppSettingsTests: XCTestCase {
         )
         XCTAssertEqual(combo.displayString, "⌃⌥↑")
     }
+
+    func testFunctionKeysWorkWithAndWithoutModifiers() {
+        let f15 = HotKeyCombo(keyCode: 0x71, modifiers: 0)
+        XCTAssertTrue(f15.isValidShortcut)
+        XCTAssertEqual(f15.displayString, "F15")
+
+        let shiftF16 = HotKeyCombo(keyCode: 0x6A, modifiers: NSEvent.ModifierFlags.shift.rawValue)
+        XCTAssertTrue(shiftF16.isValidShortcut)
+        XCTAssertEqual(shiftF16.displayString, "⇧F16")
+
+        XCTAssertEqual(HotKeyCombo.keyName(for: 0x5A), "F20")
+        // Ordinary keys still need a modifier to become a global shortcut.
+        XCTAssertFalse(HotKeyCombo(keyCode: 0x01, modifiers: 0).isValidShortcut)
+    }
 }
 
 @MainActor

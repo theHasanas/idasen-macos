@@ -44,7 +44,7 @@ final class GlobalHotKeys {
         onPress: @escaping () -> Void,
         onRelease: (() -> Void)? = nil
     ) -> Bool {
-        guard combo.modifierFlags.rawValue != 0 else { return false }
+        guard combo.isValidShortcut else { return false }
         guard idsByID[id] == nil else { return false }
 
         let hotKeyID = EventHotKeyID(signature: Self.signature, id: nextID)
