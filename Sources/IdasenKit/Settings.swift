@@ -160,6 +160,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var showMenuBarExtra: Bool = true
     public var menuBarShowsHeight: Bool = true
     public var menuBarOnly: Bool = false
+    /// Hide the menu bar icon while the saved desk is out of range.
+    public var hideMenuBarIconWhenAway: Bool = false
 
     // Notifications
     public var notifyOnArrival: Bool = true
@@ -200,7 +202,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case unit, heightScale, autoConnect, reconnectAutomatically, launchAtLogin
         case lastDeskID, lastName, didCompleteOnboarding
         case warmUpBeforeMoves, dpgCompatibility, nudgeStepMM, defaultMoveToleranceMM, safetyMaxRunSeconds
-        case showMenuBarExtra, menuBarShowsHeight, menuBarOnly
+        case showMenuBarExtra, menuBarShowsHeight, menuBarOnly, hideMenuBarIconWhenAway
         case notifyOnArrival, notifyOnConnectionChanges, playSounds
         case globalHotKeysEnabled, hotKeyUp, hotKeyDown, hotKeyStop, hotKeyPresets
         case theme, accent, reduceMotion, demoMode
@@ -226,6 +228,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         menuBarShowsHeight = try c.decodeIfPresent(Bool.self, forKey: .menuBarShowsHeight) ?? defaults.menuBarShowsHeight
         menuBarOnly = try c.decodeIfPresent(Bool.self, forKey: .menuBarOnly) ?? defaults.menuBarOnly
         if menuBarOnly { showMenuBarExtra = true }
+        hideMenuBarIconWhenAway = try c.decodeIfPresent(Bool.self, forKey: .hideMenuBarIconWhenAway) ?? defaults.hideMenuBarIconWhenAway
         notifyOnArrival = try c.decodeIfPresent(Bool.self, forKey: .notifyOnArrival) ?? defaults.notifyOnArrival
         notifyOnConnectionChanges = try c.decodeIfPresent(Bool.self, forKey: .notifyOnConnectionChanges) ?? defaults.notifyOnConnectionChanges
         playSounds = try c.decodeIfPresent(Bool.self, forKey: .playSounds) ?? defaults.playSounds

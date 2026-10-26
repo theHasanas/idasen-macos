@@ -10,7 +10,7 @@ struct IdasenApp: App {
     var body: some Scene {
         mainWindow
 
-        MenuBarExtra(isInserted: model.binding(\.showMenuBarExtra)) {
+        MenuBarExtra(isInserted: model.menuBarIconBinding) {
             MenuBarView()
                 .environmentObject(model)
                 .environmentObject(model.desk)

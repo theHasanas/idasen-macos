@@ -45,8 +45,9 @@ opening a downloaded app in **System Settings → Privacy & Security**.
 
 **Desk control**
 
-- Connect over Bluetooth LE with one click; the app remembers your desk and
-  reconnects automatically (with backoff) when the connection drops.
+- Connect over Bluetooth LE with one click; the app remembers your desk and,
+  when the connection drops, keeps a pending connection that completes as soon
+  as the desk is back in range (no polling or scanning).
 - Live height readout in centimetres or inches, with movement direction and
   speed.
 - Press-and-hold Raise / Lower, a prominent Stop, and fine nudges (±0.5 cm,
@@ -70,6 +71,8 @@ opening a downloaded app in **System Settings → Privacy & Security**.
 - **Run in menu bar only** in Settings → Desk → Connection; the next launch
   starts without the main window or Dock icon. Choose **Open Idasen** from the
   menu bar to show the main window.
+- Optional **Hide icon when the desk is out of range**: the icon disappears after a
+  minute without the desk and returns when it reconnects.
 - Raise / lower / stop, one-click presets, connect / disconnect, open the app.
 
 **Notifications**

@@ -60,7 +60,9 @@ public enum ConnectionState: Equatable, Sendable {
     case scanning
     case connecting(name: String)
     case connected(name: String)
-    case reconnecting(attempt: Int)
+    /// A pending connection with no timeout: the system connects as soon as
+    /// the saved desk comes back in range.
+    case waiting(name: String)
     case failed(String)
 
     public var isConnected: Bool {
@@ -68,16 +70,21 @@ public enum ConnectionState: Equatable, Sendable {
         return false
     }
 
+    public var isWaiting: Bool {
+        if case .waiting = self { return true }
+        return false
+    }
+
     public var isBusy: Bool {
         switch self {
-        case .scanning, .connecting, .reconnecting: return true
+        case .scanning, .connecting: return true
         default: return false
         }
     }
 
     public var deskName: String? {
         switch self {
-        case .connected(let name), .connecting(let name): return name
+        case .connected(let name), .connecting(let name), .waiting(let name): return name
         default: return nil
         }
     }
@@ -111,6 +118,9 @@ public protocol DeskLink: AnyObject {
     /// Reconnects to the previously saved desk if the system still knows it.
     @discardableResult
     func connectSaved() -> Bool
+    /// Like ``connectSaved()``, but never times out, so the desk reconnects by
+    /// itself when it comes back in range.
+    func waitForSaved()
     func disconnect()
     func forgetSaved()
 
@@ -121,6 +131,8 @@ public protocol DeskLink: AnyObject {
 
 extension DeskLink {
     public var hasReferenceInput: Bool { true }
+
+    public func waitForSaved() { connectSaved() }
 }
 
 // MARK: - CoreBluetooth implementation
@@ -209,6 +221,12 @@ public final class BluetoothDeskLink: NSObject, DeskLink {
 
     public func startScan() {
         guard !state.isConnected else { return }
+        if state.isWaiting {
+            // Scanning means the user is picking a desk; drop the pending connection.
+            wantsConnection = false
+            if let peripheral { central.cancelPeripheralConnection(peripheral) }
+            resetCharacteristics()
+        }
         switch central.state {
         case .poweredOn:
             beginScan()
@@ -287,6 +305,24 @@ public final class BluetoothDeskLink: NSObject, DeskLink {
         return true
     }
 
+    public func waitForSaved() {
+        guard let id = savedDeskID, !state.isConnected else { return }
+        wantsConnection = true
+        let name = currentName ?? "Desk"
+        if let peripheral, peripheral.identifier == id, peripheral.state == .connecting {
+            // Keep the request already in flight; it just stops timing out.
+            connectTimeoutTimer?.invalidate()
+            state = .waiting(name: name)
+            return
+        }
+        // Only wait for a desk the system already knows. An unknown desk would
+        // need an open-ended scan, which costs far more power.
+        guard central.state == .poweredOn,
+              let known = central.retrievePeripherals(withIdentifiers: [id]).first
+        else { return }
+        connect(peripheral: known, name: name, timeout: false)
+    }
+
     public func disconnect() {
         wantsConnection = false
         pendingConnectName = nil
@@ -307,13 +343,18 @@ public final class BluetoothDeskLink: NSObject, DeskLink {
         state = .idle
     }
 
-    private func connect(peripheral: CBPeripheral, name: String) {
+    private func connect(peripheral: CBPeripheral, name: String, timeout: Bool = true) {
         stopScan()
         self.peripheral = peripheral
         connectedPeripheral = peripheral
         pendingConnectName = nil
-        state = .connecting(name: name)
-        startConnectTimeout()
+        connectTimeoutTimer?.invalidate()
+        if timeout {
+            state = .connecting(name: name)
+            startConnectTimeout()
+        } else {
+            state = .waiting(name: name)
+        }
         central.connect(peripheral, options: nil)
     }
 
@@ -322,10 +363,14 @@ public final class BluetoothDeskLink: NSObject, DeskLink {
         connectTimeoutTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: false) { [weak self] _ in
             Task { @MainActor in
                 guard let self, !self.state.isConnected else { return }
+                // The owner may respond with waitForSaved(), which keeps this
+                // pending connection alive instead of cancelling it.
+                self.delegate?.link(self, didFail: .deskNotFound)
+                guard !self.state.isWaiting else { return }
+                self.wantsConnection = false
                 if let peripheral = self.peripheral {
                     self.central.cancelPeripheralConnection(peripheral)
                 }
-                self.delegate?.link(self, didFail: .deskNotFound)
                 self.state = .idle
             }
         }
@@ -576,13 +621,15 @@ extension BluetoothDeskLink: @MainActor CBCentralManagerDelegate {
         isReconnecting: Bool,
         error: Error?
     ) {
+        // Ignore callbacks for a connection that was already abandoned.
+        guard peripheral === self.peripheral else { return }
         let wasExpected = wantsConnection
         resetCharacteristics()
+        state = .idle
         if wasExpected {
             // The controller dropped out; the owner decides how to retry.
             delegate?.link(self, didFail: .connectionLost)
         }
-        state = .idle
     }
 }
 

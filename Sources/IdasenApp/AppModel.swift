@@ -77,6 +77,8 @@ final class AppModel: ObservableObject {
     @Published var showCalibration = false
     @Published var showAllDevices = false
     @Published var isLaunchAtLoginEnabled = false
+    /// False once the desk has been out of reach for ``awayGracePeriod``.
+    @Published private(set) var isDeskNearby = true
 
     private let hotKeys = GlobalHotKeys()
     private var keyMonitor: Any?
@@ -85,6 +87,9 @@ final class AppModel: ObservableObject {
     private var cancellables: Set<AnyCancellable> = []
     private var didStart = false
     private var shouldHideInitialWindow = true
+    private var awayTimer: Timer?
+    /// Rides out brief Bluetooth drops before the menu bar icon hides.
+    private let awayGracePeriod: TimeInterval = 60
     /// `--demo` forces demo mode for this launch only.
     private var demoOverride = false
 
@@ -125,7 +130,7 @@ final class AppModel: ObservableObject {
         case .scanning: return "Searching…"
         case .connecting(let name): return "Connecting to \(name)…"
         case .connected(let name): return "Connected to \(name)"
-        case .reconnecting(let attempt): return attempt > 1 ? "Reconnecting… (attempt \(attempt))" : "Reconnecting…"
+        case .waiting(let name): return "Waiting for \(name)…"
         case .failed(let message): return message
         }
     }
@@ -197,6 +202,7 @@ final class AppModel: ObservableObject {
                 guard let self else { return }
                 MainActor.assumeIsolated {
                     self.menuState.update(from: self)
+                    self.updateDeskPresence()
                 }
             }
             .store(in: &cancellables)
@@ -206,6 +212,7 @@ final class AppModel: ObservableObject {
         applySettings(changedFrom: nil, to: settings)
 
         desk.connectIfConfigured()
+        updateDeskPresence()
 
         if !settings.didCompleteOnboarding {
             showPairing = true
@@ -222,6 +229,56 @@ final class AppModel: ObservableObject {
         workspace.addObserver(forName: NSWorkspace.sessionDidResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.desk.stop()
+            }
+        }
+        workspace.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.desk.resumeWaitingIfNeeded()
+            }
+        }
+    }
+
+    // MARK: - Menu bar presence
+
+    /// Whether the menu bar icon is shown right now, honouring auto-hide.
+    var isMenuBarIconVisible: Bool {
+        guard settings.showMenuBarExtra else { return false }
+        guard settings.hideMenuBarIconWhenAway, settings.lastDeskID != nil else { return true }
+        return isDeskNearby
+    }
+
+    /// Binding for `MenuBarExtra(isInserted:)`. Writes from the system (the user
+    /// dragging the icon out) change the setting; auto-hide does not.
+    var menuBarIconBinding: Binding<Bool> {
+        Binding(
+            get: { self.isMenuBarIconVisible },
+            set: { newValue in
+                guard newValue != self.isMenuBarIconVisible else { return }
+                self.settings.showMenuBarExtra = newValue
+            }
+        )
+    }
+
+    /// True while the app is trying to reach a desk that is not answering. A
+    /// manual disconnect, Bluetooth being off or the pairing sheet do not count.
+    private var isExpectingDesk: Bool {
+        if case .connecting = desk.connection { return true }
+        return desk.connection.isWaiting
+    }
+
+    private func updateDeskPresence() {
+        guard !desk.isConnected, isExpectingDesk else {
+            awayTimer?.invalidate()
+            awayTimer = nil
+            if !isDeskNearby { isDeskNearby = true }
+            return
+        }
+        guard isDeskNearby, awayTimer == nil else { return }
+        awayTimer = Timer.scheduledTimer(withTimeInterval: awayGracePeriod, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.awayTimer = nil
+                if !self.desk.isConnected, self.isExpectingDesk { self.isDeskNearby = false }
             }
         }
     }

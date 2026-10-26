@@ -93,8 +93,6 @@ public final class DeskService: ObservableObject, DeskLinkDelegate {
     private var holdPeakSpeedMMps: Double = 0
     private var moveTimer: Timer?
     private var keepAliveTimer: Timer?
-    private var reconnectTimer: Timer?
-    private var reconnectAttempt = 0
     private var userWantsConnection = false
 
     /// How an automatic move is driven.
@@ -148,7 +146,6 @@ public final class DeskService: ObservableObject, DeskLinkDelegate {
         holdTimer?.invalidate()
         moveTimer?.invalidate()
         keepAliveTimer?.invalidate()
-        reconnectTimer?.invalidate()
     }
 
     // MARK: - Scanning
@@ -172,7 +169,6 @@ public final class DeskService: ObservableObject, DeskLinkDelegate {
     public func connect(to desk: DiscoveredDesk) {
         stopScanning()
         userWantsConnection = true
-        reconnectAttempt = 0
         appendLog(.info, "Connecting to \(desk.name)…")
         link.connect(to: desk.id, name: desk.name)
     }
@@ -181,7 +177,6 @@ public final class DeskService: ObservableObject, DeskLinkDelegate {
     @discardableResult
     public func connectSavedDesk() -> Bool {
         userWantsConnection = true
-        reconnectAttempt = 0
         let result = link.connectSaved()
         if result {
             appendLog(.info, "Reconnecting to \(link.connectedDeskName ?? "saved desk")…")
@@ -197,7 +192,6 @@ public final class DeskService: ObservableObject, DeskLinkDelegate {
 
     public func disconnect() {
         userWantsConnection = false
-        reconnectTimer?.invalidate()
         cancelMovementLoops()
         sendStopBytes()
         isReady = false
@@ -644,9 +638,6 @@ public final class DeskService: ObservableObject, DeskLinkDelegate {
     public func linkDidBecomeReady(_ link: DeskLink) {
         guard !isReady else { return }
         isReady = true
-        reconnectAttempt = 0
-        reconnectTimer?.invalidate()
-        reconnectTimer = nil
         settings.lastDeskID = link.savedDeskID
         appendLog(.info, "Desk ready")
         link.requestHeight()
@@ -726,8 +717,11 @@ public final class DeskService: ObservableObject, DeskLinkDelegate {
             break
         }
 
-        if case .connectionLost = error, userWantsConnection, settings.reconnectAutomatically {
-            scheduleReconnect()
+        // A dropped link or a desk that did not answer in time (asleep, or out of
+        // range) both mean: wait for it to come back.
+        if error == .connectionLost || error == .deskNotFound,
+           userWantsConnection, settings.reconnectAutomatically {
+            waitForSavedDesk()
         }
     }
 
@@ -742,25 +736,21 @@ public final class DeskService: ObservableObject, DeskLinkDelegate {
 
     // MARK: - Reconnection
 
-    private func scheduleReconnect() {
-        let attempt = reconnectAttempt + 1
-        reconnectAttempt = attempt
-        guard attempt <= 8 else {
-            appendLog(.error, "Giving up reconnecting after \(attempt - 1) attempts")
-            connection = .failed("Desk unreachable")
-            return
-        }
-        let delays: [Double] = [1, 2, 3, 5, 8, 13, 21, 30]
-        let delay = delays[min(attempt - 1, delays.count - 1)]
-        connection = .reconnecting(attempt: attempt)
-        appendLog(.warning, "Reconnecting in \(Int(delay)) s (attempt \(attempt))")
-        reconnectTimer?.invalidate()
-        reconnectTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, self.userWantsConnection else { return }
-                self.link.connectSaved()
-            }
-        }
+    /// Leaves a pending connection to the saved desk with no timeout. The
+    /// Bluetooth controller completes it when the desk is back in range, so
+    /// waiting costs no polling or scanning.
+    private func waitForSavedDesk() {
+        guard !connection.isConnected, link.savedDeskID != nil else { return }
+        appendLog(.info, "Waiting for \(link.connectedDeskName ?? "the desk") to come back in range")
+        link.waitForSaved()
+    }
+
+    /// Re-arms the wait after the Mac wakes, unless the user disconnected.
+    public func resumeWaitingIfNeeded() {
+        guard userWantsConnection, settings.reconnectAutomatically,
+              !connection.isConnected, !connection.isBusy, !connection.isWaiting
+        else { return }
+        waitForSavedDesk()
     }
 
     public func clearError() {

@@ -119,7 +119,8 @@ struct DeskView: View {
                 .font(.system(size: 26, weight: .medium))
                 .foregroundStyle(accent)
                 .symbolEffect(.variableColor.iterative, isActive: true)
-            Text(desk.connection.isBusy ? "Searching for your desk…" : "Desk not connected")
+            Text(desk.connection.isBusy ? "Searching for your desk…"
+                : desk.connection.isWaiting ? "Waiting for your desk…" : "Desk not connected")
                 .font(.system(size: 13.5, weight: .semibold))
             Text("Wake the desk with its handset, then connect over Bluetooth.")
                 .font(.system(size: 11.5))

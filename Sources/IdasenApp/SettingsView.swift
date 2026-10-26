@@ -286,6 +286,12 @@ struct SettingsView: View {
                 .font(.system(size: 12))
             }
 
+            Toggle("Hide icon when the desk is out of range", isOn: model.binding(\.hideMenuBarIconWhenAway))
+                .disabled(!model.settings.showMenuBarExtra)
+            Text("Hides after a minute without the desk and reappears when it reconnects. Needs “Reconnect when the connection drops”. Open Idasen from Spotlight in the meantime.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
             Toggle("Run in menu bar only", isOn: Binding(
                 get: { model.settings.menuBarOnly },
                 set: { enabled in

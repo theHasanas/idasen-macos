@@ -67,7 +67,7 @@ struct ConnectionFooter: View {
     private var statusColor: Color {
         if desk.isConnected { return .green }
         switch desk.connection {
-        case .connecting, .reconnecting, .scanning: return .orange
+        case .connecting, .scanning: return .orange
         case .failed: return .red
         default: return .secondary
         }
@@ -78,7 +78,7 @@ struct ConnectionFooter: View {
         switch desk.connection {
         case .scanning: return "Searching…"
         case .connecting: return "Connecting…"
-        case .reconnecting: return "Reconnecting…"
+        case .waiting: return "Waiting for desk…"
         case .failed(let message): return message
         default: return "Not connected"
         }

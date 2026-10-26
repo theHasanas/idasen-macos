@@ -464,6 +464,22 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(AppSettings.sitStandThreshold(sitMM: nil, standMM: nil), 960)
     }
 
+    func testHideMenuBarIconWhenAwayDefaultsOffAndPersists() throws {
+        XCTAssertFalse(try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8)).hideMenuBarIconWhenAway)
+        var settings = AppSettings()
+        settings.hideMenuBarIconWhenAway = true
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings))
+        XCTAssertTrue(decoded.hideMenuBarIconWhenAway)
+    }
+
+    func testWaitingStateIsNotBusy() {
+        let state = ConnectionState.waiting(name: "Desk 1904")
+        XCTAssertTrue(state.isWaiting)
+        XCTAssertFalse(state.isBusy)
+        XCTAssertFalse(state.isConnected)
+        XCTAssertEqual(state.deskName, "Desk 1904")
+    }
+
     func testSettingsDecodeIgnoresRemovedActivityKeys() throws {
         let json = #"{"unit":"inches","remindersEnabled":true,"dailyStandingGoalMinutes":90,"historyRetentionDays":30}"#
         let settings = try JSONDecoder().decode(AppSettings.self, from: Data(json.utf8))
