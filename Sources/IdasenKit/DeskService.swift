@@ -66,13 +66,8 @@ public final class DeskService: ObservableObject, DeskLinkDelegate {
             if settings.demoMode != oldValue.demoMode {
                 switchLink(demo: settings.demoMode)
             }
-            if settings.historyRetentionDays != oldValue.historyRetentionDays {
-                activity?.configure(retentionDays: settings.historyRetentionDays)
-            }
         }
     }
-
-    public weak var activity: ActivityRecorder?
 
     // MARK: Internals
 
@@ -207,7 +202,6 @@ public final class DeskService: ObservableObject, DeskLinkDelegate {
         sendStopBytes()
         isReady = false
         link.disconnect()
-        activity?.closeOpenSegment()
         appendLog(.info, "Disconnected")
     }
 
@@ -694,12 +688,6 @@ public final class DeskService: ObservableObject, DeskLinkDelegate {
             movement != .stopped {
             movement = .stopped
         }
-
-        activity?.record(
-            heightMM: height,
-            at: now,
-            thresholdMM: sitStandThreshold
-        )
     }
 
     /// The controller's raw speed field has no documented unit. Derive mm/s
@@ -780,16 +768,6 @@ public final class DeskService: ObservableObject, DeskLinkDelegate {
     }
 
     // MARK: - Helpers
-
-    public var sitStandThreshold: Double {
-        let sit = activitySitHeight
-        let stand = activityStandHeight
-        return settings.sitStandThreshold(sitMM: sit, standMM: stand)
-    }
-
-    /// Preset heights supplied by the app for activity classification.
-    public var activitySitHeight: Double?
-    public var activityStandHeight: Double?
 
     private func appendLog(_ level: LogEntry.Level, _ message: String) {
         log.insert(LogEntry(level: level, message: message), at: 0)

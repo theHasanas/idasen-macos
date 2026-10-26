@@ -8,7 +8,7 @@ struct SidebarView: View {
     var body: some View {
         List(selection: $model.selection) {
             Section("Workspace") {
-                ForEach([SidebarItem.desk, .presets, .activity]) { item in
+                ForEach([SidebarItem.desk, .presets]) { item in
                     Label(item.title, systemImage: item.symbol).tag(item)
                 }
             }

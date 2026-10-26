@@ -18,7 +18,6 @@ struct DeskView: View {
             ScrollView {
                 VStack(spacing: 16) {
                     header
-                    TodaySummaryView(activity: model.activity, model: model)
 
                     if geometry.size.width < 650 {
                         VStack(spacing: 16) {
@@ -423,7 +422,7 @@ struct DeskView: View {
         HStack(spacing: 14) {
             KeyHint(keys: "↑ ↓", label: "hold to move")
             KeyHint(keys: "space", label: "stop")
-            KeyHint(keys: "⌘1–⌘3", label: "sections")
+            KeyHint(keys: "⌘1–⌘2", label: "sections")
         }
     }
 

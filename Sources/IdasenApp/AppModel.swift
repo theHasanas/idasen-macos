@@ -38,7 +38,6 @@ struct Banner: Identifiable, Equatable {
 enum SidebarItem: String, CaseIterable, Identifiable {
     case desk
     case presets
-    case activity
     case settings
 
     var id: String { rawValue }
@@ -47,7 +46,6 @@ enum SidebarItem: String, CaseIterable, Identifiable {
         switch self {
         case .desk: return "Desk"
         case .presets: return "Presets"
-        case .activity: return "Activity"
         case .settings: return "Settings"
         }
     }
@@ -56,7 +54,6 @@ enum SidebarItem: String, CaseIterable, Identifiable {
         switch self {
         case .desk: return "table.furniture"
         case .presets: return "bookmark.fill"
-        case .activity: return "chart.bar.xaxis"
         case .settings: return "gearshape.fill"
         }
     }
@@ -69,7 +66,6 @@ final class AppModel: ObservableObject {
     let settingsStore: SettingsStore
     let presetStore: PresetStore
     let desk = DeskService()
-    let activity: ActivityRecorder
     let notifications = NotificationService()
     let menuState = DeskMenuState()
 
@@ -85,10 +81,8 @@ final class AppModel: ObservableObject {
     private let hotKeys = GlobalHotKeys()
     private var keyMonitor: Any?
     private let deskWindows = NSHashTable<NSWindow>.weakObjects()
-    private var reminderTimer: Timer?
     private var bannerTask: Task<Void, Never>?
     private var cancellables: Set<AnyCancellable> = []
-    private var reminderSchedule = StandingReminderSchedule()
     private var didStart = false
     private var shouldHideInitialWindow = true
     /// `--demo` forces demo mode for this launch only.
@@ -98,7 +92,6 @@ final class AppModel: ObservableObject {
         let directory = DevTools.isSnapshotRun ? DevTools.previewDirectory : nil
         settingsStore = SettingsStore(directory: directory)
         presetStore = PresetStore(directory: directory)
-        activity = ActivityRecorder(directory: directory)
         if DevTools.isSnapshotRun {
             var preview = AppSettings()
             preview.demoMode = true
@@ -142,9 +135,16 @@ final class AppModel: ObservableObject {
         return unit.format(millimeters: height, showUnit: false)
     }
 
+    var sitStandThreshold: Double {
+        AppSettings.sitStandThreshold(
+            sitMM: sitPreset?.heightMM ?? AppSettings.defaultSitHeightMM,
+            standMM: standPreset?.heightMM ?? AppSettings.defaultStandHeightMM
+        )
+    }
+
     var sitStandState: SitStandState {
         guard let height = desk.heightMM else { return .unknown }
-        return height >= desk.sitStandThreshold ? .standing : .sitting
+        return height >= sitStandThreshold ? .standing : .sitting
     }
 
     var menuBarTitle: String {
@@ -165,10 +165,6 @@ final class AppModel: ObservableObject {
         }
 
         desk.settings = settings
-        desk.activity = activity
-        activity.configure(retentionDays: settings.historyRetentionDays)
-        syncPresetHeights()
-
 
         // Forward nested store changes so views only observe this object.
         settingsStore.onChange = { [weak self] old, new in
@@ -177,9 +173,7 @@ final class AppModel: ObservableObject {
             self.objectWillChange.send()
         }
         presetStore.onChange = { [weak self] _ in
-            guard let self else { return }
-            self.syncPresetHeights()
-            self.objectWillChange.send()
+            self?.objectWillChange.send()
         }
 
         desk.onArrived = { [weak self] target in self?.handleArrival(target) }
@@ -203,15 +197,13 @@ final class AppModel: ObservableObject {
                 guard let self else { return }
                 MainActor.assumeIsolated {
                     self.menuState.update(from: self)
-                    if !self.desk.isConnected { self.reminderSchedule.reset() }
                 }
             }
             .store(in: &cancellables)
 
-        if !DevTools.isSnapshotRun { notifications.configure(model: self) }
+        if !DevTools.isSnapshotRun { notifications.configure() }
         installKeyMonitor()
         applySettings(changedFrom: nil, to: settings)
-        if !DevTools.isSnapshotRun { startReminderTimer() }
 
         desk.connectIfConfigured()
 
@@ -225,7 +217,6 @@ final class AppModel: ObservableObject {
         workspace.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.desk.stop()
-                self?.activity.closeOpenSegment()
             }
         }
         workspace.addObserver(forName: NSWorkspace.sessionDidResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
@@ -241,8 +232,6 @@ final class AppModel: ObservableObject {
             settingsStore.settings.demoMode = false
         }
         desk.stop()
-        activity.closeOpenSegment()
-        activity.persist()
         settingsStore.flushPendingSave()
         hotKeys.unregisterAll()
         if let keyMonitor {
@@ -344,20 +333,13 @@ final class AppModel: ObservableObject {
     private func applySettings(changedFrom old: AppSettings?, to new: AppSettings) {
         // DeskService uses these values for movement and safety, so apply them immediately.
         desk.settings = new
-        if old?.remindersEnabled != new.remindersEnabled
-            || old?.reminderOnlyWhileSitting != new.reminderOnlyWhileSitting {
-            reminderSchedule.reset()
-        }
-        if old == nil || old?.sitStandThresholdMM != new.sitStandThresholdMM {
-            syncPresetHeights()
-        }
-        if old == nil {
-            activity.configure(retentionDays: new.historyRetentionDays)
-        }
-        if !DevTools.isSnapshotRun, old == nil || old?.notifyOnArrival != new.notifyOnArrival
-            || old?.notifyOnConnectionChanges != new.notifyOnConnectionChanges
-            || old?.remindersEnabled != new.remindersEnabled {
-            notifications.updateAuthorization()
+        if !DevTools.isSnapshotRun, old == nil || old?.notifyOnArrival != new.notifyOnArrival {
+            // Ask for permission when the user turns arrival alerts on, not at launch.
+            if old != nil, new.notifyOnArrival {
+                notifications.requestAuthorization()
+            } else {
+                notifications.updateAuthorization()
+            }
         }
         if old == nil || old?.theme != new.theme { applyTheme() }
         if old == nil || old?.globalHotKeysEnabled != new.globalHotKeysEnabled
@@ -379,11 +361,6 @@ final class AppModel: ObservableObject {
         case .dark:
             NSApp.appearance = NSAppearance(named: .darkAqua)
         }
-    }
-
-    private func syncPresetHeights() {
-        desk.activitySitHeight = sitPreset?.heightMM ?? AppSettings.defaultSitHeightMM
-        desk.activityStandHeight = standPreset?.heightMM ?? AppSettings.defaultStandHeightMM
     }
 
     func updateLaunchAtLoginState() {
@@ -458,8 +435,7 @@ final class AppModel: ObservableObject {
 
     func toggleSitStand() {
         guard let height = desk.heightMM else { return }
-        let threshold = desk.sitStandThreshold
-        if height >= threshold {
+        if height >= sitStandThreshold {
             if let sit = sitPreset {
                 move(to: sit)
             } else {
@@ -548,38 +524,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    // MARK: Reminders & notifications
-
-    private func startReminderTimer() {
-        reminderTimer?.invalidate()
-        reminderTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.checkStandingReminder() }
-        }
-    }
-
-    private func checkStandingReminder() {
-        let segment = activity.today.segments.last
-        let sittingSince = sitStandState == .sitting && segment?.state == .sitting ? segment?.start : nil
-        guard reminderSchedule.isDue(
-            at: Date(), enabled: settings.remindersEnabled, connected: desk.isConnected,
-            moving: desk.isMoving, sittingSince: sittingSince,
-            onlyWhileSitting: settings.reminderOnlyWhileSitting,
-            intervalMinutes: settings.reminderIntervalMinutes
-        ) else { return }
-        notifications.postStandingReminder()
-    }
-
-    func setStandingRemindersEnabled(_ enabled: Bool) {
-        settings.remindersEnabled = enabled
-        reminderSchedule.reset()
-        checkStandingReminder()
-        if enabled, !DevTools.isSnapshotRun { notifications.requestAuthorization() }
-    }
-
-    func snoozeReminder() {
-        reminderSchedule.snooze(at: Date())
-        banner("Reminder snoozed for 10 minutes", style: .info)
-    }
+    // MARK: Notifications
 
     private func handleArrival(_ target: Double) {
         if settings.notifyOnArrival {
@@ -587,14 +532,6 @@ final class AppModel: ObservableObject {
         }
         if settings.playSounds {
             NSSound(named: "Glass")?.play()
-        }
-    }
-
-    func standUpNow() {
-        if let stand = standPreset {
-            move(to: stand)
-        } else {
-            desk.go(toMM: AppSettings.defaultStandHeightMM)
         }
     }
 }

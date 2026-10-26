@@ -147,18 +147,10 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var menuBarShowsHeight: Bool = true
     public var menuBarOnly: Bool = false
 
-    // Notifications & reminders
+    // Notifications
     public var notifyOnArrival: Bool = true
     public var notifyOnConnectionChanges: Bool = false
     public var playSounds: Bool = false
-    public var remindersEnabled: Bool = false
-    public var reminderIntervalMinutes: Double = 45
-    public var reminderOnlyWhileSitting: Bool = true
-
-    // Activity
-    public var dailyStandingGoalMinutes: Double = 120
-    public var sitStandThresholdMM: Double = 0 // 0 = derive from sit/stand presets
-    public var historyRetentionDays: Int = 120
 
     // Global hot keys
     public var globalHotKeysEnabled: Bool = false
@@ -182,9 +174,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var sitPresetHeightMM: Double { AppSettings.defaultSitHeightMM }
     public var standPresetHeightMM: Double { AppSettings.defaultStandHeightMM }
 
-    /// Height at which "sitting" becomes "standing" for activity tracking.
-    public func sitStandThreshold(sitMM: Double?, standMM: Double?) -> Double {
-        if sitStandThresholdMM > 0 { return sitStandThresholdMM }
+    /// Height at which the desk counts as standing, for the sit/stand toggle.
+    public static func sitStandThreshold(sitMM: Double?, standMM: Double?) -> Double {
         if let sit = sitMM, let stand = standMM, stand > sit {
             return (sit + stand) / 2
         }
@@ -197,8 +188,6 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case warmUpBeforeMoves, dpgCompatibility, nudgeStepMM, defaultMoveToleranceMM, safetyMaxRunSeconds
         case showMenuBarExtra, menuBarShowsHeight, menuBarOnly
         case notifyOnArrival, notifyOnConnectionChanges, playSounds
-        case remindersEnabled, reminderIntervalMinutes, reminderOnlyWhileSitting
-        case dailyStandingGoalMinutes, sitStandThresholdMM, historyRetentionDays
         case globalHotKeysEnabled, hotKeyUp, hotKeyDown, hotKeyStop, hotKeyPresets
         case theme, accent, reduceMotion, demoMode
     }
@@ -226,12 +215,6 @@ public struct AppSettings: Codable, Equatable, Sendable {
         notifyOnArrival = try c.decodeIfPresent(Bool.self, forKey: .notifyOnArrival) ?? defaults.notifyOnArrival
         notifyOnConnectionChanges = try c.decodeIfPresent(Bool.self, forKey: .notifyOnConnectionChanges) ?? defaults.notifyOnConnectionChanges
         playSounds = try c.decodeIfPresent(Bool.self, forKey: .playSounds) ?? defaults.playSounds
-        remindersEnabled = try c.decodeIfPresent(Bool.self, forKey: .remindersEnabled) ?? defaults.remindersEnabled
-        reminderIntervalMinutes = try c.decodeIfPresent(Double.self, forKey: .reminderIntervalMinutes) ?? defaults.reminderIntervalMinutes
-        reminderOnlyWhileSitting = try c.decodeIfPresent(Bool.self, forKey: .reminderOnlyWhileSitting) ?? defaults.reminderOnlyWhileSitting
-        dailyStandingGoalMinutes = try c.decodeIfPresent(Double.self, forKey: .dailyStandingGoalMinutes) ?? defaults.dailyStandingGoalMinutes
-        sitStandThresholdMM = try c.decodeIfPresent(Double.self, forKey: .sitStandThresholdMM) ?? defaults.sitStandThresholdMM
-        historyRetentionDays = try c.decodeIfPresent(Int.self, forKey: .historyRetentionDays) ?? defaults.historyRetentionDays
         globalHotKeysEnabled = try c.decodeIfPresent(Bool.self, forKey: .globalHotKeysEnabled) ?? defaults.globalHotKeysEnabled
         hotKeyUp = try c.decodeIfPresent(HotKeyCombo.self, forKey: .hotKeyUp) ?? defaults.hotKeyUp
         hotKeyDown = try c.decodeIfPresent(HotKeyCombo.self, forKey: .hotKeyDown) ?? defaults.hotKeyDown

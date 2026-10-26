@@ -14,7 +14,6 @@ struct MenuBarView: View {
         GlassControls {
         VStack(spacing: 12) {
             header
-            TodaySummaryView(activity: model.activity, model: model, compact: true)
             movementControls
             if !model.presets.isEmpty {
                 presets

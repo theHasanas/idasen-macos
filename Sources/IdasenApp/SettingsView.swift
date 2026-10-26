@@ -1,6 +1,7 @@
 import AppKit
 import IdasenKit
 import SwiftUI
+import UserNotifications
 
 struct SettingsDetailView: View {
     var body: some View {
@@ -29,27 +30,23 @@ struct SettingsView: View {
     @State private var category: Category = .general
 
     private enum Category: String, CaseIterable, Identifiable {
-        case general = "General", desk = "Desk", shortcuts = "Shortcuts", activity = "Activity", diagnostics = "Diagnostics"
+        case general = "General", desk = "Desk", shortcuts = "Shortcuts", diagnostics = "Diagnostics"
         var id: Self { self }
     }
 
     @State private var pendingReset: ResetAction?
 
     private enum ResetAction {
-        case today, activity, settings
+        case settings
 
         var title: String {
             switch self {
-            case .today: "Clear today's activity?"
-            case .activity: "Delete all activity history?"
             case .settings: "Reset all settings?"
             }
         }
 
         var buttonTitle: String {
             switch self {
-            case .today: "Clear today"
-            case .activity: "Delete activity"
             case .settings: "Reset settings"
             }
         }
@@ -64,7 +61,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Settings")
                         .font(.system(size: 26, weight: .semibold))
-                    Text("Units, desk limits, reminders, shortcuts and diagnostics.")
+                    Text("Units, desk limits, notifications, shortcuts and diagnostics.")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
@@ -81,13 +78,11 @@ struct SettingsView: View {
             case .general:
                 appearanceSection
                 connectionSection
+                notificationsSection
             case .desk:
                 deskSection
             case .shortcuts:
                 shortcutsSection
-            case .activity:
-                notificationsSection
-                activitySection
             case .diagnostics:
                 diagnosticsSection
             }
@@ -319,14 +314,13 @@ struct SettingsView: View {
     // MARK: Notifications
 
     private var notificationsSection: some View {
-        SettingsCard(title: "Notifications & reminders", symbol: "bell.fill") {
+        SettingsCard(title: "Notifications", symbol: "bell.fill") {
             Toggle("Notify when the desk reaches a target", isOn: model.binding(\.notifyOnArrival))
+            if model.settings.notifyOnArrival {
+                NotificationPermissionRow(notifications: model.notifications)
+            }
             Toggle("Notify on connect and disconnect", isOn: model.binding(\.notifyOnConnectionChanges))
             Toggle("Play sound on arrival", isOn: model.binding(\.playSounds))
-
-            Divider().opacity(0.5)
-
-            StandingReminderPreferences(model: model, notifications: model.notifications)
         }
     }
 
@@ -359,75 +353,6 @@ struct SettingsView: View {
                             }
                         )
                     )
-                }
-            }
-        }
-    }
-
-    // MARK: Activity
-
-    private var activitySection: some View {
-        SettingsCard(title: "Activity", symbol: "chart.bar.xaxis") {
-            LabeledRow("Daily standing goal") {
-                HStack {
-                    PrecisionSlider(value: model.binding(\.dailyStandingGoalMinutes), in: 30...300, step: 15)
-                        .tint(accent)
-                        .frame(width: 180)
-                    Text("\(Int(model.settings.dailyStandingGoalMinutes)) min")
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .monospacedDigit()
-                        .frame(width: 56, alignment: .leading)
-                }
-            }
-
-            LabeledRow("Sit/stand threshold") {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        PrecisionSlider(
-                            value: model.binding(\.sitStandThresholdMM),
-                            in: 0...scale.maximumMM,
-                            step: 10
-                        )
-                        .tint(accent)
-                        .frame(width: 180)
-                        Text(model.settings.sitStandThresholdMM == 0
-                            ? "Auto (\(model.unit.format(millimeters: desk.sitStandThreshold)))"
-                            : model.unit.format(millimeters: model.settings.sitStandThresholdMM))
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
-                            .monospacedDigit()
-                            .frame(width: 110, alignment: .leading)
-                    }
-                    if model.settings.sitStandThresholdMM != 0 {
-                        Button("Use automatic threshold") {
-                            model.settings.sitStandThresholdMM = 0
-                        }
-                        .buttonStyle(ActionButtonStyle(tint: .secondary, filled: false, compact: true))
-                    }
-                }
-            }
-
-            LabeledRow("Keep history") {
-                Picker("", selection: model.binding(\.historyRetentionDays)) {
-                    Text("30 days").tag(30)
-                    Text("90 days").tag(90)
-                    Text("120 days").tag(120)
-                    Text("180 days").tag(180)
-                    Text("1 year").tag(365)
-                }
-                .labelsHidden()
-                .frame(width: 120)
-            }
-
-            LabeledRow("") {
-                HStack(spacing: 8) {
-                    Button("Reset today") {
-                        pendingReset = .today
-                    }
-                    .buttonStyle(ActionButtonStyle(tint: .secondary, filled: false, compact: true))
-                    Button("Delete all activity") {
-                        pendingReset = .activity
-                    }
-                    .buttonStyle(ActionButtonStyle(tint: .red, filled: false, compact: true))
                 }
             }
         }
@@ -499,12 +424,6 @@ struct SettingsView: View {
 
     private func performReset(_ action: ResetAction) {
         switch action {
-        case .today:
-            model.activity.reset()
-            model.banner("Today's activity cleared", style: .success)
-        case .activity:
-            model.activity.removeAllHistory()
-            model.banner("Activity history deleted", style: .success)
         case .settings:
             model.settingsStore.reset()
             model.banner("Settings reset to defaults", style: .success)
@@ -513,6 +432,24 @@ struct SettingsView: View {
 }
 
 // MARK: - Building blocks
+
+/// Shown under the arrival toggle until macOS notifications are allowed.
+struct NotificationPermissionRow: View {
+    @ObservedObject var notifications: NotificationService
+
+    var body: some View {
+        Group {
+            if notifications.authorizationStatus == .denied {
+                Label("Allow Idasen in System Settings → Notifications for alerts outside the app.", systemImage: "bell.slash")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else if notifications.authorizationStatus == .notDetermined {
+                Button("Allow notifications…") { notifications.requestAuthorization() }
+                    .buttonStyle(.link)
+            }
+        }
+        .onAppear { if !DevTools.isSnapshotRun { notifications.refreshAuthorization() } }
+    }
+}
 
 struct SettingsCard<Content: View>: View {
     var title: String

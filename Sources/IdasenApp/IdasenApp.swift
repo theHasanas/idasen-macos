@@ -14,7 +14,6 @@ struct IdasenApp: App {
             MenuBarView()
                 .environmentObject(model)
                 .environmentObject(model.desk)
-                .environmentObject(model.activity)
                 .modifier(MotionPreferences(reduceMotion: model.settings.reduceMotion))
                 .preferredColorScheme(Theme.colorScheme(model.settings.theme))
         } label: {
@@ -26,7 +25,6 @@ struct IdasenApp: App {
             SettingsSceneView()
                 .environmentObject(model)
                 .environmentObject(model.desk)
-                .environmentObject(model.activity)
                 .modifier(MotionPreferences(reduceMotion: model.settings.reduceMotion))
                 .preferredColorScheme(Theme.colorScheme(model.settings.theme))
                 .frame(width: 640, height: 560)
@@ -38,15 +36,10 @@ struct IdasenApp: App {
             RootView()
                 .environmentObject(model)
                 .environmentObject(model.desk)
-                .environmentObject(model.activity)
                 .modifier(MotionPreferences(reduceMotion: model.settings.reduceMotion))
                 .preferredColorScheme(Theme.colorScheme(model.settings.theme))
                 .frame(minWidth: 940, minHeight: 640)
                 .onAppear {
-                    if CommandLine.arguments.contains("--dev-activity-fixture") {
-                        DevTools.writeActivityFixture()
-                        return
-                    }
                     model.start()
                     if DevTools.isSnapshotRun { DevTools.runSnapshotSequence(model: model) }
                 }
@@ -123,8 +116,6 @@ struct RootView: View {
             DeskView()
         case .presets:
             PresetsView()
-        case .activity:
-            ActivityView()
         case .settings:
             SettingsDetailView()
         }
@@ -350,13 +341,9 @@ struct NavigationMenuItems: View {
     let model: AppModel
 
     var body: some View {
-        Group {
-            Button("Desk") { model.selection = .desk }
-                .keyboardShortcut("1", modifiers: .command)
-            Button("Presets") { model.selection = .presets }
-                .keyboardShortcut("2", modifiers: .command)
-        }
-        Button("Activity") { model.selection = .activity }
-            .keyboardShortcut("3", modifiers: .command)
+        Button("Desk") { model.selection = .desk }
+            .keyboardShortcut("1", modifiers: .command)
+        Button("Presets") { model.selection = .presets }
+            .keyboardShortcut("2", modifiers: .command)
     }
 }

@@ -7,19 +7,14 @@ import UserNotifications
 @MainActor
 final class NotificationService: NSObject, ObservableObject {
     @Published private(set) var authorizationStatus: UNAuthorizationStatus = .notDetermined
-    static let reminderCategory = "IDASEN_REMINDER"
-    static let standNowAction = "IDASEN_STAND_NOW"
-    static let snoozeAction = "IDASEN_SNOOZE"
     static let arrivalCategory = "IDASEN_ARRIVAL"
 
-    private weak var model: AppModel?
     private var isAuthorized = false
     private var center: UNUserNotificationCenter? {
         Bundle.main.bundleIdentifier == nil ? nil : UNUserNotificationCenter.current()
     }
 
-    func configure(model: AppModel) {
-        self.model = model
+    func configure() {
         guard let center else { return }
         center.delegate = self
         center.setNotificationCategories(Self.categories)
@@ -56,16 +51,6 @@ final class NotificationService: NSObject, ObservableObject {
         }
     }
 
-    func postStandingReminder() {
-        let content = UNMutableNotificationContent()
-        content.title = "Time to stand up"
-        content.body = "Ready for a standing break? Move to your standing preset when you’re ready."
-        content.categoryIdentifier = Self.reminderCategory
-        content.sound = .default
-        deliver(content, identifier: "idasen.reminder.\(UUID().uuidString)")
-        model?.banner("Time to stand up — use the menu bar to raise the desk", style: .warning)
-    }
-
     func postArrival(heightText: String) {
         let content = UNMutableNotificationContent()
         content.title = "Desk in position"
@@ -81,29 +66,13 @@ final class NotificationService: NSObject, ObservableObject {
     }
 
     private static var categories: Set<UNNotificationCategory> {
-        let stand = UNNotificationAction(
-            identifier: standNowAction,
-            title: "Stand up now",
-            options: [.foreground]
-        )
-        let snooze = UNNotificationAction(
-            identifier: snoozeAction,
-            title: "Snooze 10 min",
-            options: []
-        )
-        let reminder = UNNotificationCategory(
-            identifier: reminderCategory,
-            actions: [stand, snooze],
-            intentIdentifiers: [],
-            options: []
-        )
         let arrival = UNNotificationCategory(
             identifier: arrivalCategory,
             actions: [],
             intentIdentifiers: [],
             options: []
         )
-        return [reminder, arrival]
+        return [arrival]
     }
 }
 
@@ -114,22 +83,5 @@ extension NotificationService: UNUserNotificationCenterDelegate {
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
         completionHandler([.banner, .sound])
-    }
-
-    nonisolated func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
-        didReceive response: UNNotificationResponse
-    ) async {
-        let action = response.actionIdentifier
-        await MainActor.run {
-            switch action {
-            case Self.standNowAction:
-                self.model?.standUpNow()
-            case Self.snoozeAction:
-                self.model?.snoozeReminder()
-            default:
-                break
-            }
-        }
     }
 }

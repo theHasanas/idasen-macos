@@ -6,9 +6,8 @@
 
 
 A native macOS app for IKEA IDÅSEN standing desks. Other LINAK controllers may share the protocol, but compatibility is unverified.
-Connect over Bluetooth, move the desk to exact heights, save presets, keep an
-eye on time at sitting and standing heights — and drive everything from the menu bar or
-global keyboard shortcuts.
+Connect over Bluetooth, move the desk to exact heights, save presets — and drive
+everything from the menu bar or global keyboard shortcuts.
 
 ```
 make app      # build build/Idasen.app
@@ -21,7 +20,7 @@ Requires macOS 14+. Build with Xcode 27 / Swift 6.4; all targets use Swift 6 lan
 
 [![Idasen desk controls in a development build](docs/assets/desk-development.png)](https://zcuric.github.io/idasen-macos/)
 
-*Development capture in demo mode. The current app also includes a grouped sidebar and Today summaries.*
+*Development capture in demo mode. The current app also includes a grouped sidebar.*
 
 Independent software; not affiliated with IKEA or LINAK.
 
@@ -71,22 +70,10 @@ opening a downloaded app in **System Settings → Privacy & Security**.
 - **Run in menu bar only** in Settings → Desk → Connection; the next launch
   starts without the main window or Dock icon. Choose **Open Idasen** from the
   menu bar to show the main window.
-- Today’s sitting/standing totals and standing-goal progress in both the dashboard and menu.
 - Raise / lower / stop, one-click presets, connect / disconnect, open the app.
 
-**Activity tracking**
+**Notifications**
 
-- Sit/stand timeline for today, standing goal with progress ring, transitions
-  and longest standing streak.
-- 14-day standing chart, today's height chart, 30-day history, CSV export.
-- Adjustable sit/stand threshold, standing goal and history retention.
-
-**Reminders & notifications**
-
-- Opt-in standing reminders with adjustable intervals, a sitting-only option,
-  and *Stand up now* / *Snooze 10 min* notification actions.
-- Reminder intervals restart on opt-in, reconnect, or a new sitting session. Alerts
-  wait until movement stops. Enabling reminders requests notification permission.
 - Optional notifications when the desk reaches a target or when the connection
   changes, plus arrival sounds.
 
@@ -130,7 +117,7 @@ Notes and troubleshooting:
 - Demo mode simulates a desk so you can explore all of the above without
   hardware.
 
-Activity is estimated from desk height while connected, not occupancy. Settings, presets, and history are stored locally.
+Settings and presets are stored locally.
 
 ## Bluetooth protocol
 
@@ -152,15 +139,15 @@ reports `1105`.
 ## Project layout
 
 ```
-Sources/IdasenKit/     protocol, BLE transport, controller, activity store (testable, no UI)
+Sources/IdasenKit/     protocol, BLE transport, controller, settings stores (testable, no UI)
 Sources/IdasenApp/     SwiftUI app: views, theme, menu bar, hot keys, notifications
 Tests/IdasenKitTests/  unit tests for codecs, controller state machine, stores
 Scripts/               app bundle assembly and app icon generation
 ```
 
 `IdasenKit` is deliberately UI-free: the protocol codec, the movement state
-machine (`DeskService`), the settings/preset stores and the activity recorder
-can all be tested without hardware. `DeskLink` is the transport seam — the real
+machine (`DeskService`) and the settings/preset stores can all be tested
+without hardware. `DeskLink` is the transport seam — the real
 `BluetoothDeskLink` and the `SimulatedDeskLink` used by demo mode are
 interchangeable.
 
@@ -180,14 +167,13 @@ Developer flags (used by the UI review workflow in this repo):
 | --- | --- |
 | `--demo` | Force demo mode for this launch |
 | `--debug-log` | Mirror the in-app diagnostics log to stderr |
-| `--dev-snapshot <path>` | Render a simulated desk with isolated temporary settings/history; never connects to hardware |
+| `--dev-snapshot <path>` | Render a simulated desk with isolated temporary settings/presets; never connects to hardware |
 | `--dev-repeat` | Snapshot every 2 s (`path-1.png`, `path-2.png`, …) |
-| `--dev-tab desk\|presets\|activity\|settings` | Select a sidebar tab for the snapshot |
+| `--dev-tab desk\|presets\|settings` | Select a sidebar tab for the snapshot |
 | `--dev-theme light\|dark\|system` | Appearance for an isolated snapshot |
 | `--dev-size 940x640` | Preview window size (minimum 940 × 640) |
 | `--dev-moving` | Start a simulated move before the snapshot |
 | `--dev-quit` | Flush preview data and exit after snapshotting |
-| `--dev-activity-fixture` | Write 21 days of synthetic activity, then exit |
 
 ## Safety
 
@@ -207,9 +193,6 @@ user switch sends an explicit stop first.
   reduced motion suppresses the layout animation. macOS 14–25 use material fallbacks.
   See Apple's [macOS 27 design updates](https://developer.apple.com/videos/play/wwdc2026/289/)
   and [Liquid Glass adoption guidance](https://developer.apple.com/documentation/technologyoverviews/adopting-liquid-glass).
-- Activity recording retains every supplied sample's timing but publishes at most
-  once per second. Routine JSON encoding/writes run on a serial utility queue;
-  explicit saves and shutdown flush that queue. Charts observe activity directly.
 - BLE writes respect CoreBluetooth flow control. Pending motion is coalesced,
   expires after 500 ms, and is discarded on Stop. Stop packets do not expire.
   Writes requiring a response are serialized; no app queue can recall packets

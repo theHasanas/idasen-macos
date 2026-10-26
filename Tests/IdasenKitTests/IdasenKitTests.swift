@@ -388,83 +388,6 @@ final class DeskServiceTests: XCTestCase {
 }
 
 @MainActor
-final class ActivityRecorderTests: XCTestCase {
-    private var directory: URL!
-
-    override func setUp() async throws {
-        directory = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("idasen-tests-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    }
-
-    override func tearDown() async throws {
-        try? FileManager.default.removeItem(at: directory)
-    }
-
-    func testRecordingCreatesSegments() {
-        let recorder = ActivityRecorder(directory: directory)
-        let start = Date()
-        recorder.record(heightMM: 730, at: start, thresholdMM: 900)
-        recorder.record(heightMM: 730, at: start.addingTimeInterval(30), thresholdMM: 900)
-        recorder.record(heightMM: 1100, at: start.addingTimeInterval(60), thresholdMM: 900)
-        recorder.record(heightMM: 1100, at: start.addingTimeInterval(120), thresholdMM: 900)
-
-        XCTAssertEqual(recorder.today.segments.count, 2)
-        XCTAssertEqual(recorder.today.transitions, 1)
-        XCTAssertEqual(recorder.today.sittingSeconds, 60, accuracy: 0.5)
-        XCTAssertEqual(recorder.today.standingSeconds, 60, accuracy: 0.5)
-        XCTAssertEqual(recorder.today.minMM, 730)
-        XCTAssertEqual(recorder.today.maxMM, 1100)
-    }
-
-    func testShortBlipsAreFolded() {
-        let recorder = ActivityRecorder(directory: directory)
-        let start = Date()
-        recorder.record(heightMM: 730, at: start, thresholdMM: 900)
-        recorder.record(heightMM: 730, at: start.addingTimeInterval(20), thresholdMM: 900)
-        // A 2 s standing blip should not create a transition.
-        recorder.record(heightMM: 1100, at: start.addingTimeInterval(22), thresholdMM: 900)
-        recorder.record(heightMM: 730, at: start.addingTimeInterval(24), thresholdMM: 900)
-        recorder.record(heightMM: 730, at: start.addingTimeInterval(40), thresholdMM: 900)
-
-        XCTAssertEqual(recorder.today.segments.count, 1)
-        XCTAssertEqual(recorder.today.transitions, 0)
-        XCTAssertEqual(recorder.today.sittingSeconds, 40, accuracy: 0.5)
-    }
-
-    func testStandingRatioAndStreak() {
-        var day = DayActivity(day: Date())
-        day.segments = [
-            ActivitySegment(start: Date(), end: Date().addingTimeInterval(60), state: .sitting),
-            ActivitySegment(start: Date(), end: Date().addingTimeInterval(180), state: .standing),
-        ]
-        XCTAssertEqual(day.standingSeconds, 180, accuracy: 0.1)
-        XCTAssertEqual(day.standingRatio, 0.75, accuracy: 0.001)
-        XCTAssertEqual(day.longestStandingStreak, 180, accuracy: 0.1)
-    }
-
-    func testPersistenceSurvivesReload() {
-        let recorder = ActivityRecorder(directory: directory)
-        let start = Date()
-        recorder.record(heightMM: 1100, at: start, thresholdMM: 900)
-        recorder.record(heightMM: 1100, at: start.addingTimeInterval(120), thresholdMM: 900)
-        recorder.persist()
-
-        let reloaded = ActivityRecorder(directory: directory)
-        XCTAssertEqual(reloaded.today.standingSeconds, 120, accuracy: 1)
-        XCTAssertEqual(reloaded.recentDays(1).count, 1)
-    }
-
-    func testExportCSV() {
-        let recorder = ActivityRecorder(directory: directory)
-        recorder.record(heightMM: 1100, at: Date(), thresholdMM: 900)
-        let csv = recorder.exportCSV()
-        XCTAssertTrue(csv.hasPrefix("date,start,end,state,duration_minutes"))
-        XCTAssertTrue(csv.contains("standing"))
-    }
-}
-
-@MainActor
 final class PresetStoreTests: XCTestCase {
     private var directory: URL!
 
@@ -528,21 +451,23 @@ final class AppSettingsTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let store = SettingsStore(directory: directory)
-        store.settings.dailyStandingGoalMinutes = 90
-        store.settings.dailyStandingGoalMinutes = 105
-        store.settings.dailyStandingGoalMinutes = 120
+        store.settings.nudgeStepMM = 1
+        store.settings.nudgeStepMM = 5
+        store.settings.nudgeStepMM = 25
         store.flushPendingSave()
 
-        XCTAssertEqual(SettingsStore(directory: directory).settings.dailyStandingGoalMinutes, 120)
+        XCTAssertEqual(SettingsStore(directory: directory).settings.nudgeStepMM, 25)
     }
 
-    func testSitStandThresholdAuto() {
-        var settings = AppSettings()
-        XCTAssertEqual(settings.sitStandThreshold(sitMM: 730, standMM: 1100), 915)
-        settings.sitStandThresholdMM = 950
-        XCTAssertEqual(settings.sitStandThreshold(sitMM: 730, standMM: 1100), 950)
-        settings.sitStandThresholdMM = 0
-        XCTAssertEqual(settings.sitStandThreshold(sitMM: nil, standMM: nil), 960)
+    func testSitStandThresholdFromPresets() {
+        XCTAssertEqual(AppSettings.sitStandThreshold(sitMM: 730, standMM: 1100), 915)
+        XCTAssertEqual(AppSettings.sitStandThreshold(sitMM: nil, standMM: nil), 960)
+    }
+
+    func testSettingsDecodeIgnoresRemovedActivityKeys() throws {
+        let json = #"{"unit":"inches","remindersEnabled":true,"dailyStandingGoalMinutes":90,"historyRetentionDays":30}"#
+        let settings = try JSONDecoder().decode(AppSettings.self, from: Data(json.utf8))
+        XCTAssertEqual(settings.unit, .inches)
     }
 
     func testSettingsDecodeWithMissingKeys() throws {
