@@ -1,5 +1,23 @@
 # Idasen for macOS — IKEA IDÅSEN standing desk controller
 
+> [!NOTE]
+> **This is a modified fork of [zcuric/idasen-macos](https://github.com/zcuric/idasen-macos).**
+> Last updated **2026-10-27**, based on upstream commit
+> [`ca48278`](https://github.com/zcuric/idasen-macos/commit/ca48278) (2026-09-29).
+>
+> Differences from the original:
+>
+> - **Removed:** activity tracking (sit/stand statistics, the Today summary, the
+>   Activity tab, CSV export) and standing reminders.
+> - **Added:** F1–F20 can be used as global shortcuts, on their own or with modifiers.
+> - **Added:** optional *Hide icon when the desk is out of range* setting. The menu bar
+>   icon hides while the desk is away and returns when it reconnects.
+> - **Changed:** when the connection drops, the app waits for the desk to come back
+>   instead of giving up after one attempt.
+>
+> The Website, Releases and issue links below point to the original project. Its
+> downloads don't include these changes; build from source to get them.
+
 [Website](https://zcuric.github.io/idasen-macos/) · [Releases](https://github.com/zcuric/idasen-macos/releases) · [Report an issue](https://github.com/zcuric/idasen-macos/issues) · [Support development](https://buymeacoffee.com/zcuricy)
 
 ![macOS build](https://github.com/zcuric/idasen-macos/actions/workflows/build.yml/badge.svg)
