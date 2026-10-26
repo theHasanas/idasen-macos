@@ -120,7 +120,8 @@ public protocol DeskLink: AnyObject {
     func connectSaved() -> Bool
     /// Like ``connectSaved()``, but never times out, so the desk reconnects by
     /// itself when it comes back in range.
-    func waitForSaved()
+    @discardableResult
+    func waitForSaved() -> Bool
     func disconnect()
     func forgetSaved()
 
@@ -132,7 +133,8 @@ public protocol DeskLink: AnyObject {
 extension DeskLink {
     public var hasReferenceInput: Bool { true }
 
-    public func waitForSaved() { connectSaved() }
+    @discardableResult
+    public func waitForSaved() -> Bool { connectSaved() }
 }
 
 // MARK: - CoreBluetooth implementation
@@ -275,13 +277,7 @@ public final class BluetoothDeskLink: NSObject, DeskLink {
         } else if let cached = peripherals[id] {
             connect(peripheral: cached, name: name)
         } else {
-            // Peripheral not known to the system yet — scan until it appears.
-            state = .connecting(name: name)
-            pendingConnectName = name
-            central.scanForPeripherals(
-                withServices: nil,
-                options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
-            )
+            scanForSavedDesk(name: name)
         }
     }
 
@@ -296,31 +292,44 @@ public final class BluetoothDeskLink: NSObject, DeskLink {
         }
         // Unknown to the system (e.g. never paired here) — scan for it.
         wantsConnection = true
+        scanForSavedDesk(name: name)
+        return true
+    }
+
+    /// Scans for a desk the system does not know yet. Unfiltered scanning is the
+    /// expensive kind, so it is time-limited like any other connection attempt.
+    private func scanForSavedDesk(name: String) {
         state = .connecting(name: name)
         pendingConnectName = name
         central.scanForPeripherals(
             withServices: nil,
             options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
         )
-        return true
+        startConnectTimeout(seconds: 30)
     }
 
-    public func waitForSaved() {
-        guard let id = savedDeskID, !state.isConnected else { return }
-        wantsConnection = true
+    @discardableResult
+    public func waitForSaved() -> Bool {
+        guard let id = savedDeskID, !state.isConnected else { return false }
         let name = currentName ?? "Desk"
         if let peripheral, peripheral.identifier == id, peripheral.state == .connecting {
             // Keep the request already in flight; it just stops timing out.
+            wantsConnection = true
             connectTimeoutTimer?.invalidate()
             state = .waiting(name: name)
-            return
+            return true
+        }
+        guard central.state == .poweredOn else {
+            // Picked up again by centralManagerDidUpdateState once Bluetooth is on.
+            wantsConnection = true
+            return true
         }
         // Only wait for a desk the system already knows. An unknown desk would
         // need an open-ended scan, which costs far more power.
-        guard central.state == .poweredOn,
-              let known = central.retrievePeripherals(withIdentifiers: [id]).first
-        else { return }
+        guard let known = central.retrievePeripherals(withIdentifiers: [id]).first else { return false }
+        wantsConnection = true
         connect(peripheral: known, name: name, timeout: false)
+        return true
     }
 
     public func disconnect() {
@@ -358,15 +367,19 @@ public final class BluetoothDeskLink: NSObject, DeskLink {
         central.connect(peripheral, options: nil)
     }
 
-    private func startConnectTimeout() {
+    private func startConnectTimeout(seconds: TimeInterval = 15) {
         connectTimeoutTimer?.invalidate()
-        connectTimeoutTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: false) { [weak self] _ in
+        connectTimeoutTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
             Task { @MainActor in
                 guard let self, !self.state.isConnected else { return }
                 // The owner may respond with waitForSaved(), which keeps this
                 // pending connection alive instead of cancelling it.
                 self.delegate?.link(self, didFail: .deskNotFound)
                 guard !self.state.isWaiting else { return }
+                if self.pendingConnectName != nil {
+                    self.pendingConnectName = nil
+                    self.central.stopScan()
+                }
                 self.wantsConnection = false
                 if let peripheral = self.peripheral {
                     self.central.cancelPeripheralConnection(peripheral)

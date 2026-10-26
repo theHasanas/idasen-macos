@@ -139,7 +139,6 @@ public final class DeskService: ObservableObject, DeskLinkDelegate {
     public init(settings: AppSettings = AppSettings()) {
         self.settings = settings
         simulatedLink.delegate = self
-        startKeepAlive()
     }
 
     isolated deinit {
@@ -577,6 +576,7 @@ public final class DeskService: ObservableObject, DeskLinkDelegate {
 
     // MARK: - Keep alive
 
+    /// Runs only while a desk is ready, so a disconnected app never wakes up.
     private func startKeepAlive() {
         keepAliveTimer?.invalidate()
         keepAliveTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
@@ -586,6 +586,11 @@ public final class DeskService: ObservableObject, DeskLinkDelegate {
                 self.link.requestHeight()
             }
         }
+    }
+
+    private func stopKeepAlive() {
+        keepAliveTimer?.invalidate()
+        keepAliveTimer = nil
     }
 
     // MARK: - DeskLinkDelegate
@@ -604,6 +609,7 @@ public final class DeskService: ObservableObject, DeskLinkDelegate {
             }
         case .idle:
             isReady = false
+            stopKeepAlive()
             heightMM = nil
             lastHeight = nil
             previousHeightSample = nil
@@ -639,6 +645,7 @@ public final class DeskService: ObservableObject, DeskLinkDelegate {
         guard !isReady else { return }
         isReady = true
         settings.lastDeskID = link.savedDeskID
+        startKeepAlive()
         appendLog(.info, "Desk ready")
         link.requestHeight()
     }
@@ -741,8 +748,11 @@ public final class DeskService: ObservableObject, DeskLinkDelegate {
     /// waiting costs no polling or scanning.
     private func waitForSavedDesk() {
         guard !connection.isConnected, link.savedDeskID != nil else { return }
-        appendLog(.info, "Waiting for \(link.connectedDeskName ?? "the desk") to come back in range")
-        link.waitForSaved()
+        if link.waitForSaved() {
+            appendLog(.info, "Waiting for \(link.connectedDeskName ?? "the desk") to come back in range")
+        } else {
+            appendLog(.warning, "macOS no longer knows this desk; use Find desk to reconnect")
+        }
     }
 
     /// Re-arms the wait after the Mac wakes, unless the user disconnected.
@@ -776,6 +786,7 @@ public final class DeskService: ObservableObject, DeskLinkDelegate {
         bluetoothLinkStorage?.disconnect()
         connection = .idle
         isReady = false
+        stopKeepAlive()
         heightMM = nil
         lastSampleAt = nil
         lastHeight = nil

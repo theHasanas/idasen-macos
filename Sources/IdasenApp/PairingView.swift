@@ -30,6 +30,10 @@ struct PairingSheet: View {
                 model.startScanning()
             }
         }
+        .onDisappear {
+            // Scanning for every nearby device is costly; never leave it running.
+            if desk.isScanning { model.stopScanning() }
+        }
         .onChange(of: desk.isConnected) { _, connected in
             if connected { dismiss() }
         }

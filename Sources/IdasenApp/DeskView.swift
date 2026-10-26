@@ -118,7 +118,7 @@ struct DeskView: View {
             Image(systemName: "antenna.radiowaves.left.and.right")
                 .font(.system(size: 26, weight: .medium))
                 .foregroundStyle(accent)
-                .symbolEffect(.variableColor.iterative, isActive: true)
+                .symbolEffect(.variableColor.iterative, isActive: desk.connection.isBusy && !reduceMotion)
             Text(desk.connection.isBusy ? "Searching for your desk…"
                 : desk.connection.isWaiting ? "Waiting for your desk…" : "Desk not connected")
                 .font(.system(size: 13.5, weight: .semibold))
